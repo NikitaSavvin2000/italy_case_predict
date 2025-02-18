@@ -1,24 +1,38 @@
+import os
+import yaml
+import requests
 import psycopg2
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 
+from config import logger
 from psycopg2.extras import execute_values
 from tensorflow.keras.models import load_model
 
 
+home_path = os.getcwd()
+
+model_path = f'{home_path}/models/italy_case_model_2025.h5'
+params_path = f'{home_path}/models/params.yaml'
+
+
 table_name = 'load_consumption'
 measurement = 'load_consumption'
-
 table_predict_name = 'predict_load_consumption'
 
-'''"Эта часть задается из yaml конфига'''
-lag =
-points_per_call =
-path_to_mpdel = "/Users/dmitrii/Downloads/model.h5"
+url_backend = os.getenv("BACKEND_URL", 'http://77.37.136.11:7070')
+
+time_interval = 5
+
+params = yaml.load(open(params_path, 'r'), Loader=yaml.SafeLoader)
+lag = params['lag']
+points_per_call = params['points_per_call']
+
+count_time_points_predict = params['points_to_predict']
 
 
-model = load_model(path_to_mpdel)
+model = load_model(model_path)
 
 DB_PARAMS = {
     "dbname": "mydb",
@@ -42,6 +56,57 @@ rows = cur.fetchall()
 df_last_values = pd.DataFrame(rows, columns=["datetime", measurement])
 df_last_values["datetime"] = df_last_values["datetime"].dt.tz_localize(None)
 
+
+
+def normalization_request(col_time, col_target, json_list_df):
+
+    url = f'{url_backend}/backend/v1/normalization'
+
+    json = {"col_time": col_time, "col_target": col_target, "json_list_df": json_list_df}
+    try:
+        req = requests.post(
+            url=url,
+            json=json,
+        )
+        if req.status_code == 200:
+            response_json = req.json()
+            norm_df = pd.DataFrame.from_dict(response_json['df_all_data_norm'])
+            min_val = float(response_json['min_val'])
+            max_val = float(response_json['max_val'])
+
+            return norm_df, min_val, max_val
+        else:
+            logger.error(f'Status code backend server: {req.status_code}')
+            logger.error(req.status_code)
+            return None, None, None
+    except Exception as e:
+        logger.error(e)
+        return None, None, None
+
+
+def reverse_normalization_request(col_time, col_target, json_list_norm_df, min_val, max_val):
+    url = f'{url_backend}/backend/v1/reverse_normalization'
+    json = {
+        "col_time": col_time,
+        "col_target": col_target,
+        "min_val": min_val,
+        "max_val": max_val,
+        "json_list_norm_df": json_list_norm_df}
+    try:
+        req = requests.post(
+            url=url,
+            json=json,
+        )
+        if req.status_code == 200:
+            reverse_de_norm_data_json = req.json()
+            reverse_norm_df = pd.DataFrame.from_dict(reverse_de_norm_data_json['df_all_data_reverse_norm'])
+            return reverse_norm_df
+        else:
+            logger.error(f'Status code backend server: {req.status_code}')
+            logger.error(req.status_code)
+            return None
+    except Exception as e:
+        logger.error(e)
 
 
 def create_x_input(df_to_predict, n_steps):
@@ -86,7 +151,16 @@ def make_predictions(x_input, x_future, points_per_call):
 Допустим наши последнее извстное значение это 17-02-2025 15:42:00 значит нужно сгенерировать df y на n-количество
  точек с интервалом 5 минут после даты 17-02-2025 15:42:00. То есть 17-02-2025 15:47:00 и тд 
 '''
-# код здесь
+
+last_know_date = df_last_values["datetime"].iloc[-1]
+
+datetime_range = pd.date_range(
+    start=last_know_date,
+    periods=count_time_points_predict,
+    freq=f"{time_interval}T"
+).floor("T")
+
+df_predict = pd.DataFrame({"datetime": datetime_range, "load_consumption": None})
 
 
 '''
@@ -97,45 +171,51 @@ def make_predictions(x_input, x_future, points_per_call):
 PS перед подачей на API нужно все переводить в json формат пример - https://github.com/NikitaSavvin2000/tool/blob/4ad5c623ffdeb597b1fe56dba1eb4e52842c6ccc/src/ui/backend/forecast.py#L434
 '''
 
-# код здесь
-df_to_predict_norm =
-df_predict_norm =
+frames = [df_last_values, df_predict]
+
+general_df = pd.concat(frames)
+
+general_df = general_df.fillna("None")
+
+general_df["datetime"] = general_df["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+json_list_general_norm_df = general_df.to_dict(orient='records')
+
+df_general_norm_df, min_val, max_val = normalization_request(
+    col_time='datetime',
+    col_target=measurement,
+    json_list_df=json_list_general_norm_df
+)
+
+df_general_norm_df = df_general_norm_df.replace("None", None)
+df_to_predict_norm = df_general_norm_df.iloc[:lag]
+df_predict_norm = df_general_norm_df.iloc[lag:]
+
 
 '''Далее готовим данные'''
-
 
 x_input = create_x_input(df_to_predict_norm, lag)
 x_future = df_predict_norm.values
 predict_values = make_predictions(x_input, x_future, points_per_call)
+print(predict_values)
+df_predict_norm[measurement] = predict_values
 
-df_predict_norm['P_l'] = predict_values
-
-
-'''Это заменить на вызов API функции как и при нормализации аналогично сама функция выова + сам вызов найти можно +- там-же'''
-df_predict = df_denormalize_with_meta(df_predict_norm, min_val, max_val)
+json_list_df_predict_norm = df_predict_norm.to_dict(orient='records')
 
 
- # код
+df_predict = reverse_normalization_request(
+    col_time='datetime',
+    col_target=measurement,
+    json_list_norm_df=json_list_df_predict_norm,
+    min_val=min_val,
+    max_val=max_val
+)
 
-"""Загрузка предсказания df_predict в базу данных"""
+# df_predict["datetime"] = pd.to_datetime(df_predict["datetime"], format="%Y-%m-%d %H:%M:%S")
 
+print(df_predict)
 
-DB_PARAMS = {
-    "dbname": "mydb",
-    "user": "myuser",
-    "password": "mypassword",
-    "host": "77.37.136.11",
-    "port": 8083
-}
-
-
-df_predict['datetime'] = pd.to_datetime(df_predict['datetime'])
-
-data = [(row['datetime'], row['value']) for _, row in df_predict.iterrows()]
-
-
-conn = psycopg2.connect(**DB_PARAMS)
-cur = conn.cursor()
+data = [(row['datetime'], row[measurement]) for _, row in df_predict.iterrows()]
 
 query = f"""
     INSERT INTO {table_predict_name} (datetime, {measurement})
