@@ -11,3 +11,4 @@ activation: 'relu'
 optimizer: 'adam'
 epochs: 3
 points_to_predict: 288
+
