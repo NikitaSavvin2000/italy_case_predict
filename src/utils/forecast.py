@@ -13,7 +13,9 @@ from tensorflow.keras.models import load_model
 
 home_path = os.getcwd()
 
-model_path = f'{home_path}/models/italy_case_model_2025.h5'
+
+model_path = f'{home_path}/models/italy_case_model_2025.keras'
+
 params_path = f'{home_path}/models/params.yaml'
 
 
@@ -29,10 +31,6 @@ params = yaml.load(open(params_path, 'r'), Loader=yaml.SafeLoader)
 lag = params['lag']
 points_per_call = params['points_per_call']
 
-count_time_points_predict = params['points_to_predict']
-
-
-model = load_model(model_path)
 
 DB_PARAMS = {
     "dbname": "mydb",
@@ -41,21 +39,6 @@ DB_PARAMS = {
     "host": "77.37.136.11",
     "port": 8083
 }
-
-limit = lag
-
-conn = psycopg2.connect(**DB_PARAMS)
-cur = conn.cursor()
-
-select_query = f"""
-SELECT * FROM {table_name} ORDER BY datetime DESC LIMIT {limit};
-"""
-cur.execute(select_query)
-rows = cur.fetchall()
-
-df_last_values = pd.DataFrame(rows, columns=["datetime", measurement])
-df_last_values["datetime"] = df_last_values["datetime"].dt.tz_localize(None)
-
 
 
 def normalization_request(col_time, col_target, json_list_df):
@@ -115,7 +98,7 @@ def create_x_input(df_to_predict, n_steps):
     return x_input
 
 
-def make_predictions(x_input, x_future, points_per_call):
+def make_predictions(x_input, x_future, points_per_call, model):
     predict_values = []
     x_future_len = len(x_future)
     remaining_horizon = x_future_len
@@ -146,86 +129,98 @@ def make_predictions(x_input, x_future, points_per_call):
     return predict_values
 
 
-'''
-Нужно создать df_predict который будет содержать значения для записи предсказания
-Допустим наши последнее извстное значение это 17-02-2025 15:42:00 значит нужно сгенерировать df y на n-количество
- точек с интервалом 5 минут после даты 17-02-2025 15:42:00. То есть 17-02-2025 15:47:00 и тд 
-'''
+def create_predict(count_time_points_predict):
+    try:
+        logger.info("Loading model.")
+        model = load_model(model_path)
 
-last_know_date = df_last_values["datetime"].iloc[-1]
+        logger.info(f"Connecting to database with limit={lag}")
+        conn = psycopg2.connect(**DB_PARAMS)
+        cur = conn.cursor()
 
-datetime_range = pd.date_range(
-    start=last_know_date,
-    periods=count_time_points_predict,
-    freq=f"{time_interval}T"
-).floor("T")
+        select_query = f"""
+        SELECT * FROM {table_name} ORDER BY datetime DESC LIMIT {lag};
+        """
+        logger.info(f"Executing SQL query: {select_query}")
+        cur.execute(select_query)
+        rows = cur.fetchall()
 
-df_predict = pd.DataFrame({"datetime": datetime_range, "load_consumption": None})
+        if not rows:
+            logger.error("No data retrieved from the database.")
+            raise ValueError("No data retrieved from the database.")
 
+        logger.info("Transforming data into DataFrame.")
+        df_last_values = pd.DataFrame(rows, columns=["datetime", measurement])
+        df_last_values["datetime"] = df_last_values["datetime"].dt.tz_localize(None)
 
-'''
-Нужно отнормировать значения по нашей функции, она уже развернута на tool_backend и нужно написать обращение к ней
-Пример обращения можно найти в репозитории https://github.com/NikitaSavvin2000/tool, а конкретно
-Функция API вызова - https://github.com/NikitaSavvin2000/tool/blob/4ad5c623ffdeb597b1fe56dba1eb4e52842c6ccc/src/ui/api/api_calls.py#L12
-Сам вызов - https://github.com/NikitaSavvin2000/tool/blob/4ad5c623ffdeb597b1fe56dba1eb4e52842c6ccc/src/ui/backend/forecast.py#L436
-PS перед подачей на API нужно все переводить в json формат пример - https://github.com/NikitaSavvin2000/tool/blob/4ad5c623ffdeb597b1fe56dba1eb4e52842c6ccc/src/ui/backend/forecast.py#L434
-'''
+        last_know_date = df_last_values["datetime"].iloc[-1]
+        logger.info(f"Last known date: {last_know_date}")
 
-frames = [df_last_values, df_predict]
+        datetime_range = pd.date_range(
+            start=last_know_date,
+            periods=count_time_points_predict,
+            freq=f"{time_interval}T"
+        ).floor("T")
 
-general_df = pd.concat(frames)
+        df_predict = pd.DataFrame({"datetime": datetime_range, "load_consumption": None})
 
-general_df = general_df.fillna("None")
+        frames = [df_last_values, df_predict]
+        general_df = pd.concat(frames)
 
-general_df["datetime"] = general_df["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
+        general_df = general_df.fillna("None")
+        general_df["datetime"] = general_df["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-json_list_general_norm_df = general_df.to_dict(orient='records')
+        json_list_general_norm_df = general_df.to_dict(orient='records')
 
-df_general_norm_df, min_val, max_val = normalization_request(
-    col_time='datetime',
-    col_target=measurement,
-    json_list_df=json_list_general_norm_df
-)
+        logger.info("Normalizing the data.")
+        df_general_norm_df, min_val, max_val = normalization_request(
+            col_time='datetime',
+            col_target=measurement,
+            json_list_df=json_list_general_norm_df
+        )
 
-df_general_norm_df = df_general_norm_df.replace("None", None)
-df_to_predict_norm = df_general_norm_df.iloc[:lag]
-df_predict_norm = df_general_norm_df.iloc[lag:]
+        df_general_norm_df = df_general_norm_df.replace("None", None)
+        df_to_predict_norm = df_general_norm_df.iloc[:lag]
+        df_predict_norm = df_general_norm_df.iloc[lag:]
 
+        x_input = create_x_input(df_to_predict_norm, lag)
+        x_future = df_predict_norm.values
+        logger.info(f"Making predictions for {len(x_future)} future points.")
+        predict_values = make_predictions(x_input, x_future, points_per_call, model)
 
-'''Далее готовим данные'''
+        df_predict_norm[measurement] = predict_values
 
-x_input = create_x_input(df_to_predict_norm, lag)
-x_future = df_predict_norm.values
-predict_values = make_predictions(x_input, x_future, points_per_call)
-print(predict_values)
-df_predict_norm[measurement] = predict_values
+        json_list_df_predict_norm = df_predict_norm.to_dict(orient='records')
 
-json_list_df_predict_norm = df_predict_norm.to_dict(orient='records')
+        logger.info("Reversing normalization on predictions.")
+        df_predict = reverse_normalization_request(
+            col_time='datetime',
+            col_target=measurement,
+            json_list_norm_df=json_list_df_predict_norm,
+            min_val=min_val,
+            max_val=max_val
+        )
 
+        data = [(row['datetime'], row[measurement]) for _, row in df_predict.iterrows()]
 
-df_predict = reverse_normalization_request(
-    col_time='datetime',
-    col_target=measurement,
-    json_list_norm_df=json_list_df_predict_norm,
-    min_val=min_val,
-    max_val=max_val
-)
+        query = f"""
+            INSERT INTO {table_predict_name} (datetime, {measurement})
+            VALUES %s
+            ON CONFLICT (datetime)
+            DO UPDATE SET {measurement} = EXCLUDED.{measurement};
+        """
 
-# df_predict["datetime"] = pd.to_datetime(df_predict["datetime"], format="%Y-%m-%d %H:%M:%S")
+        logger.info(f"Inserting forecasted data into the database.")
+        execute_values(cur, query, data)
 
-print(df_predict)
+        conn.commit()
+        cur.close()
+        conn.close()
 
-data = [(row['datetime'], row[measurement]) for _, row in df_predict.iterrows()]
+        logger.info('Data successfully predicted and inserted into the database.')
 
-query = f"""
-    INSERT INTO {table_predict_name} (datetime, {measurement})
-    VALUES %s
-    ON CONFLICT (datetime)
-    DO UPDATE SET {measurement} = EXCLUDED.{measurement};
-"""
-
-execute_values(cur, query, data)
-
-conn.commit()
-cur.close()
-conn.close()
+    except Exception as e:
+        logger.error(f"Error during prediction process: {e}")
+        if conn:
+            conn.rollback()
+        raise e

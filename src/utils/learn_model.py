@@ -13,7 +13,6 @@ from tensorflow.keras.layers import (LSTM, Dense, Bidirectional, Dropout, Input,
 from tensorflow.keras import regularizers
 
 
-
 home_path = os.getcwd()
 
 params_file = f'{home_path}/src/utils/params.yaml'
@@ -23,7 +22,6 @@ table_name = 'load_consumption'
 measurement = 'load_consumption'
 
 url_backend = os.getenv("BACKEND_URL", 'http://77.37.136.11:7070')
-
 
 params_path = os.path.join(home_path, params_file)
 params = yaml.load(open(params_path, 'r'), Loader=yaml.SafeLoader)
@@ -43,14 +41,8 @@ points_per_call = params['points_per_call']
 
 points_to_predict = params['points_to_predict']
 
-
-
-'''"Эта часть задается из yaml конфига'''
-
 time_interval = 5
-path_to_mpdel = "/Users/dmitrii/Downloads/model.h5"
 cols_for_train = []
-
 
 
 DB_PARAMS = {
@@ -60,23 +52,6 @@ DB_PARAMS = {
     "host": "77.37.136.11",
     "port": 8083
 }
-
-
-limit = lag
-
-conn = psycopg2.connect(**DB_PARAMS)
-cur = conn.cursor()
-
-select_query = f"""
-SELECT * FROM {table_name} ORDER BY datetime DESC;
-"""
-cur.execute(select_query)
-rows = cur.fetchall()
-conn.commit()
-cur.close()
-conn.close()
-df_train = pd.DataFrame(rows, columns=["datetime", measurement])
-df_train["datetime"] = df_train["datetime"].dt.tz_localize(None)
 
 
 def split_sequence(sequence, n_steps, horizon):
@@ -149,39 +124,72 @@ def create_x_input(df_to_predict, n_steps):
     return x_input
 
 
-df_train["datetime"] = df_train["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
+def update_model():
+    try:
+        logger.info("Connecting to the database to fetch training data.")
+        conn = psycopg2.connect(**DB_PARAMS)
+        cur = conn.cursor()
 
-json_list_df_train = df_train.to_dict(orient='records')
+        select_query = f"""
+        SELECT * FROM {table_name} ORDER BY datetime DESC;
+        """
+        logger.info(f"Executing SQL query: {select_query}")
+        cur.execute(select_query)
+        rows = cur.fetchall()
 
-df_train_norm, min_val, max_val = normalization_request(
-    col_time='datetime',
-    col_target=measurement,
-    json_list_df=json_list_df_train
-)
+        if not rows:
+            logger.error("No data retrieved from the database for training.")
+            raise ValueError("No data retrieved from the database for training.")
 
-values = df_train_norm.values
+        conn.commit()
+        cur.close()
+        conn.close()
 
-X, y = split_sequence(values, lag, points_per_call)
+        logger.info("Transforming data into DataFrame for training.")
+        df_train = pd.DataFrame(rows, columns=["datetime", measurement])
+        df_train["datetime"] = df_train["datetime"].dt.tz_localize(None)
+        df_train["datetime"] = df_train["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
+        json_list_df_train = df_train.to_dict(orient='records')
 
-lstm_model = Sequential()
+        logger.info("Normalizing the training data.")
+        df_train_norm, min_val, max_val = normalization_request(
+            col_time='datetime',
+            col_target=measurement,
+            json_list_df=json_list_df_train
+        )
 
-lstm_model.add(LSTM(lstm0_units, activation='softplus', return_sequences=True, recurrent_dropout=recurrent_dropout_rate))
-lstm_model.add(LSTM(lstm1_units, activation=activation, return_sequences=True, recurrent_dropout=recurrent_dropout_rate))
-lstm_model.add(LSTM(lstm2_units, activation=activation, recurrent_dropout=recurrent_dropout_rate))
+        values = df_train_norm.values
+        X, y = split_sequence(values, lag, points_per_call)
 
-lstm_model.add(Dense(points_per_call, activation='linear', kernel_regularizer=regularizers.l2(regularizers_l2)))
+        logger.info("Building the LSTM model.")
+        lstm_model = Sequential()
 
-lstm_model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mae'])
+        lstm_model.add(LSTM(lstm0_units, activation='softplus', return_sequences=True, recurrent_dropout=recurrent_dropout_rate))
+        lstm_model.add(LSTM(lstm1_units, activation=activation, return_sequences=True, recurrent_dropout=recurrent_dropout_rate))
+        lstm_model.add(LSTM(lstm2_units, activation=activation, recurrent_dropout=recurrent_dropout_rate))
 
-model = lstm_model
+        lstm_model.add(Dense(points_per_call, activation='linear', kernel_regularizer=regularizers.l2(regularizers_l2)))
 
-history = model.fit(X, y, epochs=epochs, verbose=1)
+        lstm_model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mae'])
 
-models_path = f'{home_path}/models'
+        logger.info("Training the model.")
+        lstm_model.fit(X, y, epochs=epochs, verbose=1)
 
-model_name = 'italy_case_model_2025'
+        models_path = f'{home_path}/models'
+        model_name = 'italy_case_model_2025.keras'
+        saved_model_path = os.path.join(models_path, model_name)
 
-model.save(os.path.join(models_path, f"{model_name}.h5"))
+        logger.info(f"Saving the model to {saved_model_path}.")
+        lstm_model.save(saved_model_path)
 
-shutil.copy(params_file, os.path.join(models_path, "params.yaml"))
+        logger.info(f"Copying params file to {models_path}/params.yaml.")
+        shutil.copy(params_file, os.path.join(models_path, "params.yaml"))
+
+        logger.info("Model update and saving completed successfully.")
+
+    except Exception as e:
+        logger.error(f"Error during model update process: {e}")
+        if conn:
+            conn.rollback()
+        raise e
