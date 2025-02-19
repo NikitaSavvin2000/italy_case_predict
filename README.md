@@ -35,7 +35,7 @@ http://0.0.0.0:7070/template_fast_api/v1/#/
 
 ### Строим контейнер
 ```bash
-    docker build -t fast_api_template .
+    docker build -t italy_case_api .
 ```
 Узнаем его IMAGE ID 
 ```bash
@@ -60,7 +60,7 @@ docker run -d -p 7071:80 <IMAGE ID>
 
 ### Строим контейнер
 ```bash
-docker build -t fast_api_template .
+docker build -t italy_case_api .
 ```
 Узнаем его ID
 ```bash

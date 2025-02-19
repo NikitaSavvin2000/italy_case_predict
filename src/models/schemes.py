@@ -1,7 +1,5 @@
-from typing import Optional
-
 from pydantic import BaseModel
 
 
-class HellowRequest(BaseModel):
-    names: list[str]
+class PredictRequest(BaseModel):
+    count_time_points_predict: int
