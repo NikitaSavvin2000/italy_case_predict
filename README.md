@@ -47,11 +47,11 @@ docker run -d -p 7071:7071 bb1942a77c32
 ```
 
 ```bash
-docker run -d -p 80:7071 bb1942a77c32
+sudo docker run -d -p 80:7071 bb1942a77c32
 ```
 
 ```bash
-docker run -d -p 7071:80 <IMAGE ID>
+sudo docker run -d -p 7071:80 <IMAGE ID>
 ```
 
 
@@ -60,13 +60,13 @@ docker run -d -p 7071:80 <IMAGE ID>
 
 ### Строим контейнер
 ```bash
-docker build -t italy_case_api .
+sudo docker build -t italy_case_api .
 ```
 Узнаем его ID
 ```bash
-docker images
+sudo docker images
 ```
 
 ```bash
-docker run -p 7071:7071 <IMAGE ID>
+sudo docker run -d -p 7072:7072 <IMAGE ID>
 ```

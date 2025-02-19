@@ -18,7 +18,8 @@ origins = [
     url
 ]
 
-# Docs - http://0.0.0.0:7070/model_fast_api/v1/
+# Docs - http://0.0.0.0:7072/model_fast_api/v1/
+# Docs - http://77.37.136.11:7072/model_fast_api/v1/
 app = FastAPI(docs_url="/model_fast_api/v1/", openapi_url='/model_fast_api/v1/openapi.json')
 app.add_middleware(
     CORSMiddleware,
@@ -72,5 +73,5 @@ def read_root():
 
 
 if __name__ == "__main__":
-    port = 7070
+    port = 7072
     uvicorn.run(app, host="0.0.0.0", port=port)
