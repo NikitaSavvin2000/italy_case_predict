@@ -139,8 +139,9 @@ def create_predict(count_time_points_predict):
         cur = conn.cursor()
 
         select_query = f"""
-        SELECT * FROM {table_name} ORDER BY datetime DESC LIMIT {lag};
+        SELECT * FROM {table_name} ORDER BY datetime DESC LIMIT {count_time_points_predict};
         """
+
         logger.info(f"Executing SQL query: {select_query}")
         cur.execute(select_query)
         rows = cur.fetchall()
@@ -152,6 +153,8 @@ def create_predict(count_time_points_predict):
         logger.info("Transforming data into DataFrame.")
         df_last_values = pd.DataFrame(rows, columns=["datetime", measurement])
         df_last_values["datetime"] = df_last_values["datetime"].dt.tz_localize(None)
+
+        df_last_values = df_last_values.sort_values(by='datetime', ascending=True)
 
         last_know_date = df_last_values["datetime"].iloc[-1]
         logger.info(f"Last known date: {last_know_date}")
@@ -180,8 +183,8 @@ def create_predict(count_time_points_predict):
         )
 
         df_general_norm_df = df_general_norm_df.replace("None", None)
-        df_to_predict_norm = df_general_norm_df.iloc[:lag]
-        df_predict_norm = df_general_norm_df.iloc[lag:]
+        df_to_predict_norm = df_general_norm_df.iloc[:-count_time_points_predict]
+        df_predict_norm = df_general_norm_df.iloc[-count_time_points_predict:]
 
         x_input = create_x_input(df_to_predict_norm, lag)
         x_future = df_predict_norm.values
@@ -193,6 +196,7 @@ def create_predict(count_time_points_predict):
         json_list_df_predict_norm = df_predict_norm.to_dict(orient='records')
 
         logger.info("Reversing normalization on predictions.")
+
         df_predict = reverse_normalization_request(
             col_time='datetime',
             col_target=measurement,
