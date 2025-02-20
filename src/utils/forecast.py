@@ -186,7 +186,10 @@ def create_predict(count_time_points_predict):
         df_to_predict_norm = df_general_norm_df.iloc[:-count_time_points_predict]
         df_predict_norm = df_general_norm_df.iloc[-count_time_points_predict:]
 
+        values = df_to_predict_norm.values
+        n_features = values.shape[1]
         x_input = create_x_input(df_to_predict_norm, lag)
+        x_input = x_input.reshape((1, lag, n_features))
         x_future = df_predict_norm.values
         logger.info(f"Making predictions for {len(x_future)} future points.")
         predict_values = make_predictions(x_input, x_future, points_per_call, model)

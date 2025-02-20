@@ -150,6 +150,11 @@ def update_model():
         df_train["datetime"] = df_train["datetime"].dt.tz_localize(None)
         df_train["datetime"] = df_train["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
+        print(df_train.head())
+        df_train = df_train.sort_values(by='datetime', ascending=True)
+        print(df_train.head())
+
+
         json_list_df_train = df_train.to_dict(orient='records')
 
         logger.info("Normalizing the training data.")
@@ -177,7 +182,7 @@ def update_model():
         lstm_model.fit(X, y, epochs=epochs, verbose=1)
 
         models_path = f'{home_path}/models'
-        model_name = 'italy_case_model_2025.keras'
+        model_name = 'italy_case_model_2025_test.keras'
         saved_model_path = os.path.join(models_path, model_name)
 
         logger.info(f"Saving the model to {saved_model_path}.")
@@ -193,3 +198,6 @@ def update_model():
         if conn:
             conn.rollback()
         raise e
+
+
+update_model()
