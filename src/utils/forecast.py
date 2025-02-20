@@ -152,6 +152,7 @@ def create_predict(count_time_points_predict):
 
         logger.info("Transforming data into DataFrame.")
         df_last_values = pd.DataFrame(rows, columns=["datetime", measurement])
+
         df_last_values["datetime"] = df_last_values["datetime"].dt.tz_localize(None)
 
         df_last_values = df_last_values.sort_values(by='datetime', ascending=True)
@@ -190,6 +191,7 @@ def create_predict(count_time_points_predict):
         n_features = values.shape[1]
         x_input = create_x_input(df_to_predict_norm, lag)
         x_input = x_input.reshape((1, lag, n_features))
+
         x_future = df_predict_norm.values
         logger.info(f"Making predictions for {len(x_future)} future points.")
         predict_values = make_predictions(x_input, x_future, points_per_call, model)

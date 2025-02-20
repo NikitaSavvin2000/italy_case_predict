@@ -182,7 +182,6 @@ def create_predict(count_time_points_predict):
         general_df = general_df.fillna("None")
         general_df["datetime"] = general_df["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        # print(general_df.head())
 
         json_list_general_norm_df = general_df.to_dict(orient='records')
 
@@ -197,9 +196,6 @@ def create_predict(count_time_points_predict):
         df_to_predict_norm = df_general_norm_df.iloc[:-count_time_points_predict]
         df_predict_norm = df_general_norm_df.iloc[-count_time_points_predict:]
 
-        # df_train = df_train.sort_values(by='datetime', ascending=True)
-
-
         values = df_to_predict_norm.values
         n_features = values.shape[1]
         x_input = create_x_input(df_to_predict_norm, lag)
@@ -208,8 +204,6 @@ def create_predict(count_time_points_predict):
         x_future = df_predict_norm.values
         logger.info(f"Making predictions for {len(x_future)} future points.")
         predict_values = make_predictions(x_input, x_future, points_per_call, model)
-
-        # print(f'predict_values = {predict_values}')
 
         df_predict_norm[measurement] = predict_values
 

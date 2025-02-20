@@ -182,7 +182,7 @@ def update_model():
         lstm_model.fit(X, y, epochs=epochs, verbose=1)
 
         models_path = f'{home_path}/models'
-        model_name = 'italy_case_model_2025_test.keras'
+        model_name = 'italy_case_model_2025.keras'
         saved_model_path = os.path.join(models_path, model_name)
 
         logger.info(f"Saving the model to {saved_model_path}.")
