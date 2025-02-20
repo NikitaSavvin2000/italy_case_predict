@@ -7,7 +7,7 @@ from src.config import logger, public_or_local
 from src.models.schemes import PredictRequest
 from src.utils.forecast import create_predict
 from src.utils.learn_model import update_model
-
+from src.utils.xgb_forecast import xgb_predict
 
 if public_or_local == 'LOCAL':
     url = 'http://localhost'
@@ -18,8 +18,9 @@ origins = [
     url
 ]
 
-# Docs - http://0.0.0.0:7070/model_fast_api/v1/
+# Docs - http://0.0.0.0:7072/model_fast_api/v1/
 # Docs - http://77.37.136.11:7072/model_fast_api/v1/
+
 app = FastAPI(docs_url="/model_fast_api/v1/", openapi_url='/model_fast_api/v1/openapi.json')
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +40,25 @@ async def predict(body: Annotated[
         count_time_points_predict = body.count_time_points_predict
         logger.info(f"Starting prediction with count_time_points_predict={count_time_points_predict}")
         create_predict(count_time_points_predict=count_time_points_predict)
+        logger.info("Prediction process completed successfully.")
+        return {"message": f"Prediction for {count_time_points_predict} time points completed successfully."}
+    except Exception as ApplicationError:
+        logger.error(f"Error occurred during prediction: {ApplicationError.__repr__()}")
+        raise HTTPException(
+            status_code=400,
+            detail="Unknown Error",
+            headers={"X-Error": f"{ApplicationError.__repr__()}"},
+        )
+
+
+@app.post("/model_fast_api/v1/predict_xgb")
+async def predict(body: Annotated[
+    PredictRequest, Body(
+        example={"count_time_points_predict": 288})]):
+    try:
+        count_time_points_predict = body.count_time_points_predict
+        logger.info(f"Starting prediction with count_time_points_predict={count_time_points_predict}")
+        xgb_predict(count_time_points_predict=count_time_points_predict)
         logger.info("Prediction process completed successfully.")
         return {"message": f"Prediction for {count_time_points_predict} time points completed successfully."}
     except Exception as ApplicationError:
