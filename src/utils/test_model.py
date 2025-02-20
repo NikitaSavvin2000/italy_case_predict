@@ -16,7 +16,7 @@ from tensorflow.keras.models import load_model
 home_path = os.getcwd()
 
 
-model_path = f'{home_path}/models/italy_case_model_2025.keras'
+model_path = f'{home_path}/models/italy_case_model_2025_test.keras'
 
 params_path = f'{home_path}/models/params.yaml'
 
@@ -154,9 +154,15 @@ def create_predict(count_time_points_predict):
 
         logger.info("Transforming data into DataFrame.")
         df_last_values = pd.DataFrame(rows, columns=["datetime", measurement])
+        print(df_last_values.head())
+        print(len(df_last_values))
+
+
         df_last_values["datetime"] = df_last_values["datetime"].dt.tz_localize(None)
 
         df_last_values = df_last_values.sort_values(by='datetime', ascending=True)
+        print(df_last_values.head())
+
 
         last_know_date = df_last_values["datetime"].iloc[-1]
         logger.info(f"Last known date: {last_know_date}")
@@ -169,11 +175,14 @@ def create_predict(count_time_points_predict):
 
         df_predict = pd.DataFrame({"datetime": datetime_range, "load_consumption": None})
 
+
         frames = [df_last_values, df_predict]
         general_df = pd.concat(frames)
 
         general_df = general_df.fillna("None")
         general_df["datetime"] = general_df["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        # print(general_df.head())
 
         json_list_general_norm_df = general_df.to_dict(orient='records')
 
@@ -188,10 +197,19 @@ def create_predict(count_time_points_predict):
         df_to_predict_norm = df_general_norm_df.iloc[:-count_time_points_predict]
         df_predict_norm = df_general_norm_df.iloc[-count_time_points_predict:]
 
+        # df_train = df_train.sort_values(by='datetime', ascending=True)
+
+
+        values = df_to_predict_norm.values
+        n_features = values.shape[1]
         x_input = create_x_input(df_to_predict_norm, lag)
+        x_input = x_input.reshape((1, lag, n_features))
+
         x_future = df_predict_norm.values
         logger.info(f"Making predictions for {len(x_future)} future points.")
         predict_values = make_predictions(x_input, x_future, points_per_call, model)
+
+        # print(f'predict_values = {predict_values}')
 
         df_predict_norm[measurement] = predict_values
 

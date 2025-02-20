@@ -150,6 +150,11 @@ def update_model():
         df_train["datetime"] = df_train["datetime"].dt.tz_localize(None)
         df_train["datetime"] = df_train["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
+        print(df_train.head())
+        df_train = df_train.sort_values(by='datetime', ascending=True)
+        print(df_train.head())
+
+
         json_list_df_train = df_train.to_dict(orient='records')
 
         logger.info("Normalizing the training data.")
