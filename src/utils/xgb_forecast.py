@@ -201,13 +201,17 @@ def xgb_predict(count_time_points_predict):
         json_list_general_norm_df = general_df.to_dict(orient='records')
 
         logger.info("Normalizing the data.")
+        print('is working 1')
         df_general_norm_df, min_val, max_val = normalization_request(
             col_time='datetime',
             col_target=measurement,
             json_list_df=json_list_general_norm_df
         )
+        print('is working 2')
 
         df_general_norm_df = df_general_norm_df.replace("None", None)
+
+        df_general_norm_df = df_general_norm_df.drop(columns=['datetime'])
 
         json_list_df_all_data_norm = df_general_norm_df.to_dict(orient='records')
 
@@ -216,8 +220,7 @@ def xgb_predict(count_time_points_predict):
 
         model_architecture_params = json.dumps([model_architecture_params])
         model_architecture_params = json.loads(model_architecture_params)
-
-
+        print('is working 3')
 
         df_evaluation, df_true_all_col, loss_list, df_real_predict, \
             response_code, response_massage = forecast_XGBoost_request(
@@ -230,10 +233,14 @@ def xgb_predict(count_time_points_predict):
             type='predictions',
             norm_values=True
         )
+        print('is working 4')
+
 
         json_list_df_real_predict = df_real_predict.to_dict(orient='records')
 
         logger.info("Reversing normalization on predictions.")
+
+        print('is working 5')
 
         df_predict = reverse_normalization_request(
             col_time='datetime',
@@ -242,6 +249,8 @@ def xgb_predict(count_time_points_predict):
             min_val=min_val,
             max_val=max_val
         )
+        print('is working 6')
+
 
         data = [(row['datetime'], row[measurement]) for _, row in df_predict.iterrows()]
 

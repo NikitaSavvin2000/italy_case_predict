@@ -187,6 +187,11 @@ def create_predict(count_time_points_predict):
         df_to_predict_norm = df_general_norm_df.iloc[:-count_time_points_predict]
         df_predict_norm = df_general_norm_df.iloc[-count_time_points_predict:]
 
+        print(df_to_predict_norm.columns)
+
+        df_to_predict_norm = df_to_predict_norm.drop(columns=['datetime'])
+        df_predict_norm = df_predict_norm.drop(columns=['datetime'])
+
         values = df_to_predict_norm.values
         n_features = values.shape[1]
         x_input = create_x_input(df_to_predict_norm, lag)
@@ -194,6 +199,7 @@ def create_predict(count_time_points_predict):
 
         x_future = df_predict_norm.values
         logger.info(f"Making predictions for {len(x_future)} future points.")
+
         predict_values = make_predictions(x_input, x_future, points_per_call, model)
 
         df_predict_norm[measurement] = predict_values
@@ -209,6 +215,7 @@ def create_predict(count_time_points_predict):
             min_val=min_val,
             max_val=max_val
         )
+        print('is working 6')
 
         data = [(row['datetime'], row[measurement]) for _, row in df_predict.iterrows()]
 

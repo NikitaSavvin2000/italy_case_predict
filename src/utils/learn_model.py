@@ -164,6 +164,9 @@ def update_model():
             json_list_df=json_list_df_train
         )
 
+        df_train_norm = df_train_norm.drop(columns=['datetime'])
+
+
         values = df_train_norm.values
         X, y = split_sequence(values, lag, points_per_call)
 
